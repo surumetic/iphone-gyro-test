@@ -3,23 +3,96 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: sans-serif; padding: 24px; font-size: 20px; }
-    button { font-size: 20px; padding: 12px 16px; }
-    .v { font-size: 28px; margin: 12px 0; }
+    body {
+      font-family: sans-serif;
+      padding: 24px;
+      font-size: 20px;
+      line-height: 1.5;
+    }
+    button {
+      font-size: 20px;
+      padding: 12px 16px;
+      margin: 0 8px 16px 0;
+    }
+    .v {
+      font-size: 28px;
+      margin: 12px 0;
+    }
+    .small {
+      font-size: 16px;
+      color: #555;
+      margin-top: 20px;
+    }
+    input {
+      width: 100%;
+    }
   </style>
 </head>
 <body>
   <button id="start">Start gyro</button>
+  <button id="stop" disabled>Stop gyro</button>
+
   <div class="v">alpha z: <span id="a">-</span> deg/s</div>
   <div class="v">beta x: <span id="b">-</span> deg/s</div>
   <div class="v">gamma y: <span id="g">-</span> deg/s</div>
+
+  <div class="small">
+    smoothing:
+    <span id="smoothingValue">0.95</span>
+    <input id="smoothing" type="range" min="0" max="0.99" step="0.01" value="0.95">
+    <div>
+      0に近いほど生値に近く、0.99に近いほどゆっくり滑らかに変化します。
+    </div>
+  </div>
 
   <script>
     const a = document.getElementById("a");
     const b = document.getElementById("b");
     const g = document.getElementById("g");
 
+    const startButton = document.getElementById("start");
+    const stopButton = document.getElementById("stop");
+
+    const smoothingInput = document.getElementById("smoothing");
+    const smoothingValue = document.getElementById("smoothingValue");
+
+    let smoothing = Number(smoothingInput.value);
+    let isRunning = false;
+
+    let smoothed = {
+      alpha: null,
+      beta: null,
+      gamma: null
+    };
+
+    smoothingInput.addEventListener("input", () => {
+      smoothing = Number(smoothingInput.value);
+      smoothingValue.textContent = smoothing.toFixed(2);
+    });
+
+    function lowPass(previous, current) {
+      if (previous === null || current === null || current === undefined) {
+        return current;
+      }
+      return previous * smoothing + current * (1 - smoothing);
+    }
+
+    function handleMotion(event) {
+      const r = event.rotationRate;
+      if (!r) return;
+
+      smoothed.alpha = lowPass(smoothed.alpha, r.alpha);
+      smoothed.beta  = lowPass(smoothed.beta,  r.beta);
+      smoothed.gamma = lowPass(smoothed.gamma, r.gamma);
+
+      a.textContent = smoothed.alpha?.toFixed(2) ?? "-";
+      b.textContent = smoothed.beta?.toFixed(2) ?? "-";
+      g.textContent = smoothed.gamma?.toFixed(2) ?? "-";
+    }
+
     async function start() {
+      if (isRunning) return;
+
       if (typeof DeviceMotionEvent !== "undefined" &&
           typeof DeviceMotionEvent.requestPermission === "function") {
         const permission = await DeviceMotionEvent.requestPermission();
@@ -29,17 +102,31 @@
         }
       }
 
-      window.addEventListener("devicemotion", (event) => {
-        const r = event.rotationRate;
-        if (!r) return;
+      smoothed = {
+        alpha: null,
+        beta: null,
+        gamma: null
+      };
 
-        a.textContent = r.alpha?.toFixed(2) ?? "-";
-        b.textContent = r.beta?.toFixed(2) ?? "-";
-        g.textContent = r.gamma?.toFixed(2) ?? "-";
-      });
+      window.addEventListener("devicemotion", handleMotion);
+
+      isRunning = true;
+      startButton.disabled = true;
+      stopButton.disabled = false;
     }
 
-    document.getElementById("start").addEventListener("click", start);
+    function stop() {
+      if (!isRunning) return;
+
+      window.removeEventListener("devicemotion", handleMotion);
+
+      isRunning = false;
+      startButton.disabled = false;
+      stopButton.disabled = true;
+    }
+
+    startButton.addEventListener("click", start);
+    stopButton.addEventListener("click", stop);
   </script>
 </body>
 </html>
